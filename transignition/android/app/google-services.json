@@ -1,0 +1,54 @@
+{
+  "project_info": {
+    "project_number": "663205153036",
+    "project_id": "transignition-app",
+    "storage_bucket": "transignition-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:663205153036:android:ea8aafe494e0e7e741a129",
+        "android_client_info": {
+          "package_name": "com.example.transignition"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "663205153036-u582c7raaia45gt4fnmsfrs6eo252tf4.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.transignition",
+            "certificate_hash": "24df8d02cdef6ad2a00a3b282d05e3f0d2561a19"
+          }
+        },
+        {
+          "client_id": "663205153036-0kqb11m1789n659nvfk2ajm53nh8des9.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDgnUtcjUj67o0MttozPmd982z5jTRkAEY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "663205153036-0kqb11m1789n659nvfk2ajm53nh8des9.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "663205153036-icdos8fpchh7s1k47tflmm1b342f13u9.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.transignition"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
