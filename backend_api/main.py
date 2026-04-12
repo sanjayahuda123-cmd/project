@@ -225,93 +225,104 @@ async def register_face(username: str = Form(...), files: List[UploadFile] = Fil
 @app.get("/evaluation")
 def evaluate_model():
     """
-    Endpoint evaluasi mendalam untuk kebutuhan Skripsi.
-    Menghitung metrik performa algoritma Fisherface berdasarkan data asli di server.
+    Endpoint evaluasi ilmiah untuk Skripsi.
+    Menggunakan metode Train-Test Split (80% Data Latih, 20% Data Uji).
     """
     import time
-    if not os.path.exists(MODEL_PATH):
-        return {"status": "error", "message": "Model tidak ditemukan. Silakan lakukan registrasi wajah terlebih dahulu."}
+    import random
     if not os.path.exists(DATASET_DIR):
         return {"status": "error", "message": "Dataset tidak ditemukan."}
 
     try:
-        model = cv2.face.FisherFaceRecognizer_create()
-        model.read(MODEL_PATH)
         label_map = load_label_map()
+        if len(label_map) < 2:
+            return {"status": "error", "message": "Minimal dibutuhkan 2 pengguna terdaftar untuk melakukan evaluasi Fisherface."}
         
-        tp = 0 # True Positives (Benar menebak identitas)
-        fp = 0 # False Positives (Salah menebak identitas orang lain)
-        fn = 0 # False Negatives (Gagal mengenali identitas asli)
-        y_true = []
-        y_pred = []
-        total_time = 0
-        confidences = []
-        samples_count = 0
+        train_faces = []
+        train_labels = []
+        test_data = [] # List of (image, true_label)
         
-        # Iterasi seluruh dataset
+        # 1. Split Dataset 80/20
         for label_str, person_name in label_map.items():
             true_label = int(label_str)
             person_path = os.path.join(DATASET_DIR, person_name)
-            if not os.path.isdir(person_path):
-                continue
+            if not os.path.isdir(person_path): continue
             
-            for img_name in os.listdir(person_path):
-                img_path = os.path.join(person_path, img_name)
-                img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
-                if img is None:
-                    continue
-                
-                img_input = cv2.resize(img, img_size)
-                
-                # Hitung waktu inferensi (Average Time) per gambar
-                start_time = time.time()
-                pred_label, confidence = model.predict(img_input)
-                end_time = time.time()
-                
-                total_time += (end_time - start_time)
-                confidences.append(confidence)
-                samples_count += 1
-                
-                # Masukkan data asli untuk confusion matrix
-                y_true.append(true_label)
-                y_pred.append(pred_label)
-                
-                if pred_label == true_label:
-                    tp += 1
-                else:
-                    # Dalam klasifikasi multi-kelas identitas:
-                    # Jika salah tebak, berarti FP untuk kelas yang ditebak, 
-                    # dan FN untuk kelas yang seharusnya.
-                    fp += 1
-                    fn += 1
+            images = [os.path.join(person_path, f) for f in os.listdir(person_path) if f.endswith(('.jpg', '.png'))]
+            if len(images) < 2: continue # Butuh minimal 2 gambar per orang untuk split
+            
+            random.shuffle(images)
+            split_idx = int(0.8 * len(images))
+            if split_idx == 0: split_idx = 1 # Minimal 1 gambar training
+            
+            train_paths = images[:split_idx]
+            test_paths = images[split_idx:]
+            
+            # Load Training Data
+            for p in train_paths:
+                img = cv2.imread(p, cv2.IMREAD_GRAYSCALE)
+                if img is not None:
+                    train_faces.append(cv2.resize(img, img_size))
+                    train_labels.append(true_label)
+            
+            # Load Testing Data
+            for p in test_paths:
+                img = cv2.imread(p, cv2.IMREAD_GRAYSCALE)
+                if img is not None:
+                    test_data.append((cv2.resize(img, img_size), true_label))
         
-        if samples_count == 0:
-            return {"status": "error", "message": "Tidak ada data gambar untuk dievaluasi."}
+        if not train_faces or not test_data:
+            return {"status": "error", "message": "Data tidak cukup untuk melakukan split 80/20."}
+
+        # 2. Training Model Sementara (Shadow Model) untuk Evaluasi
+        eval_model = cv2.face.FisherFaceRecognizer_create()
+        eval_model.train(train_faces, np.array(train_labels))
+        
+        tp = 0
+        fp = 0
+        fn = 0
+        total_time = 0
+        confidences = []
+        y_true = []
+        y_pred = []
+        
+        # 3. Testing pada 20% Data Uji
+        for img, true_label in test_data:
+            start_time = time.perf_counter()
+            pred_label, confidence = eval_model.predict(img)
+            end_time = time.perf_counter()
             
-        # 1. Akurasi & Error Rate
+            total_time += (end_time - start_time)
+            confidences.append(confidence)
+            
+            y_true.append(true_label)
+            y_pred.append(pred_label)
+            
+            if pred_label == true_label:
+                tp += 1
+            else:
+                fp += 1
+                fn += 1
+        
+        samples_count = len(test_data)
         accuracy = (tp / samples_count) * 100
         error_rate = 100 - accuracy
         
-        # 2. Average Inference Time (dalam detik)
         avg_time = total_time / samples_count
-        
-        # 3. Threshold (Jarak rata-rata yang dihasilkan Fisherface)
-        # Seringkali digunakan sebagai acuan untuk membedakan 'Unknown'
         avg_confidence = sum(confidences) / len(confidences) if confidences else 0
         
-        # 4. Precision, Recall, F1 (Sebagai Desimal untuk Skripsi)
+        # Precision, Recall, F1
         precision = tp / (tp + fp) if (tp + fp) > 0 else 0
         recall = tp / (tp + fn) if (tp + fn) > 0 else 0
         f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
         
-        # 5. True Negatives (TN)
-        # Secara matematis di multi-class: Memprediksi 'bukan X' pada sampel yang memang 'bukan X'
-        # Simulasi TN yang logis: (Jumlah Kelas - 1) * TP
+        # TN Simulation
         num_classes = len(label_map)
         tn = (num_classes - 1) * tp
 
         return {
             "status": "success",
+            "method": "Train-Test Split (80/20)",
             "accuracy": f"{accuracy:.1f}%",
             "error_rate": f"{error_rate:.1f}%",
             "tp": tp,
@@ -321,15 +332,16 @@ def evaluate_model():
             "precision": float(f"{precision:.4f}"),
             "recall": float(f"{recall:.4f}"),
             "f1_score": float(f"{f1:.4f}"),
-            "avg_time": f"{avg_time:.3f}s",
+            "avg_time": f"{avg_time:.4f}s",
             "threshold": f"{int(avg_confidence)}",
-            "total_samples": samples_count,
-            "y_true_names": [label_map[str(y)] for y in y_true],
-            "y_pred_names": [label_map[str(y)] for y in y_pred]
+            "total_samples_test": samples_count,
+            "total_samples_train": len(train_faces),
+            "y_true_names": [label_map.get(str(y), "Unknown") for y in y_true],
+            "y_pred_names": [label_map.get(str(y), "Unknown") for y in y_pred]
         }
     except Exception as e:
         print(f"ERROR: {e}")
-        return {"status": "error", "message": f"Terjadi kesalahan saat menghitung metrik: {str(e)}"}
+        return {"status": "error", "message": f"Gagal menghitung metrik 80/20: {str(e)}"}
 
 @app.get("/evaluation/plot")
 def get_evaluation_plot():
