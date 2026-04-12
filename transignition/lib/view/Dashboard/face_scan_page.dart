@@ -121,8 +121,9 @@ class _FaceScanPageState extends State<FaceScanPage>
 
           // Fisherface confidence is distance (lower is closer/better)
           // Threshold 1000 adalah standar, bisa disesuaikan berdasarkan hasil tes
+          // Kita naikkan nilai toleransinya ke 2500 untuk Fisherface (semakin kecil angkanya semakin mirip, jadi batas toleransi diperlebar)
           if (result['name'] == currentUserId &&
-              result['confidence'] < 1000) {
+              result['confidence'] < 2500) {
             identityMatched = true;
             break;
           }

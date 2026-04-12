@@ -2,9 +2,57 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:transignition/service/translate_service.dart';
+import 'package:transignition/constants/api_config.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
-class FisherfaceStatsPage extends StatelessWidget {
+class FisherfaceStatsPage extends StatefulWidget {
   const FisherfaceStatsPage({super.key});
+
+  @override
+  State<FisherfaceStatsPage> createState() => _FisherfaceStatsPageState();
+}
+
+class _FisherfaceStatsPageState extends State<FisherfaceStatsPage> {
+  bool _isLoading = true;
+  Map<String, dynamic>? _data;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchEvaluationData();
+  }
+
+  Future<void> _fetchEvaluationData() async {
+    try {
+      final response = await http.get(Uri.parse(ApiConfig.evaluationEndpoint));
+      if (response.statusCode == 200) {
+        final result = json.decode(response.body);
+        if (result['status'] == 'success') {
+          setState(() {
+            _data = result;
+            _isLoading = false;
+          });
+        } else {
+          setState(() {
+            _error = result['message'];
+            _isLoading = false;
+          });
+        }
+      } else {
+        setState(() {
+          _error = "Server Error: ${response.statusCode}";
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _error = "Connection Error: $e";
+        _isLoading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -25,136 +73,158 @@ class FisherfaceStatsPage extends StatelessWidget {
           ),
         ),
         centerTitle: true,
+        actions: [
+          IconButton(
+            onPressed: _isLoading ? null : () {
+              setState(() => _isLoading = true);
+              _fetchEvaluationData();
+            },
+            icon: const Icon(Icons.refresh_rounded),
+          ),
+        ],
       ),
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: EdgeInsets.all(24.r),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                TranslateService.tr('Algorithm Performance'),
-                style: GoogleFonts.roboto(
-                  fontSize: 18.sp,
-                  fontWeight: FontWeight.bold,
-                  color: colorScheme.onSurface,
-                ),
-              ),
-              SizedBox(height: 16.h),
-              Row(
-                children: [
-                  Expanded(
-                    child: _buildStatCard(
-                      context: context,
-                      title: TranslateService.tr('Accuracy'),
-                      value: "96.5%",
-                      icon: Icons.check_circle_outline_rounded,
-                      color: Colors.green,
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : _error != null
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24.0),
+                      child: Text(
+                        _error!,
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.roboto(color: colorScheme.error),
+                      ),
+                    ),
+                  )
+                : SingleChildScrollView(
+                    padding: EdgeInsets.all(24.r),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          TranslateService.tr('Algorithm Performance'),
+                          style: GoogleFonts.roboto(
+                            fontSize: 18.sp,
+                            fontWeight: FontWeight.bold,
+                            color: colorScheme.onSurface,
+                          ),
+                        ),
+                        SizedBox(height: 16.h),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _buildStatCard(
+                                context: context,
+                                title: TranslateService.tr('Accuracy'),
+                                value: _data?['accuracy'] ?? "0%",
+                                icon: Icons.check_circle_outline_rounded,
+                                color: Colors.green,
+                              ),
+                            ),
+                            SizedBox(width: 16.w),
+                            Expanded(
+                              child: _buildStatCard(
+                                context: context,
+                                title: TranslateService.tr('Error Rate'),
+                                value: _data?['error_rate'] ?? "0%",
+                                icon: Icons.error_outline_rounded,
+                                color: Colors.redAccent,
+                              ),
+                            ),
+                          ],
+                        ),
+                        SizedBox(height: 16.h),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _buildStatCard(
+                                context: context,
+                                title: TranslateService.tr('Avg Time'),
+                                value: _data?['avg_time'] ?? "0s",
+                                icon: Icons.speed_rounded,
+                                color: Colors.blueAccent,
+                              ),
+                            ),
+                            SizedBox(width: 16.w),
+                            Expanded(
+                              child: _buildStatCard(
+                                context: context,
+                                title: TranslateService.tr('Threshold'),
+                                value: _data?['threshold'] ?? "0",
+                                icon: Icons.tune_rounded,
+                                color: Colors.orangeAccent,
+                              ),
+                            ),
+                          ],
+                        ),
+                        SizedBox(height: 32.h),
+                        Text(
+                          TranslateService.tr('Confusion Matrix Details'),
+                          style: GoogleFonts.roboto(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: colorScheme.onSurface,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        _buildMatrixRow(
+                          context,
+                          TranslateService.tr('True Positives (TP)'),
+                          "${_data?['tp'] ?? 0}",
+                          Icons.verified_user_rounded,
+                        ),
+                        const SizedBox(height: 12),
+                        _buildMatrixRow(
+                          context,
+                          TranslateService.tr('True Negatives (TN)'),
+                          "${_data?['tn'] ?? 0}",
+                          Icons.gpp_good_rounded,
+                        ),
+                        const SizedBox(height: 12),
+                        _buildMatrixRow(
+                          context,
+                          TranslateService.tr('False Positives (FP)'),
+                          "${_data?['fp'] ?? 0}",
+                          Icons.warning_amber_rounded,
+                        ),
+                        const SizedBox(height: 12),
+                        _buildMatrixRow(
+                          context,
+                          TranslateService.tr('False Negatives (FN)'),
+                          "${_data?['fn'] ?? 0}",
+                          Icons.highlight_off_rounded,
+                        ),
+                        SizedBox(height: 32.h),
+                        Text(
+                          TranslateService.tr('Metric Scores'),
+                          style: GoogleFonts.roboto(
+                            fontSize: 18.sp,
+                            fontWeight: FontWeight.bold,
+                            color: colorScheme.onSurface,
+                          ),
+                        ),
+                        SizedBox(height: 16.h),
+                        _buildProgressIndicator(
+                          context,
+                          TranslateService.tr('Precision'),
+                          (_data?['precision'] ?? 0).toDouble(),
+                        ),
+                        const SizedBox(height: 12),
+                        _buildProgressIndicator(
+                          context,
+                          TranslateService.tr('Recall'),
+                          (_data?['recall'] ?? 0).toDouble(),
+                        ),
+                        const SizedBox(height: 12),
+                        _buildProgressIndicator(
+                          context,
+                          TranslateService.tr('F1 Score'),
+                          (_data?['f1_score'] ?? 0).toDouble(),
+                        ),
+                      ],
                     ),
                   ),
-                  SizedBox(width: 16.w),
-                  Expanded(
-                    child: _buildStatCard(
-                      context: context,
-                      title: TranslateService.tr('Error Rate'),
-                      value: "3.5%",
-                      icon: Icons.error_outline_rounded,
-                      color: Colors.redAccent,
-                    ),
-                  ),
-                ],
-              ),
-              SizedBox(height: 16.h),
-              Row(
-                children: [
-                  Expanded(
-                    child: _buildStatCard(
-                      context: context,
-                      title: TranslateService.tr('Avg Time'),
-                      value: "1.2s",
-                      icon: Icons.speed_rounded,
-                      color: Colors.blueAccent,
-                    ),
-                  ),
-                  SizedBox(width: 16.w),
-                  Expanded(
-                    child: _buildStatCard(
-                      context: context,
-                      title: TranslateService.tr('Threshold'),
-                      value: "3500",
-                      icon: Icons.tune_rounded,
-                      color: Colors.orangeAccent,
-                    ),
-                  ),
-                ],
-              ),
-              SizedBox(height: 32.h),
-              Text(
-                TranslateService.tr('Confusion Matrix Details'),
-                style: GoogleFonts.roboto(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: colorScheme.onSurface,
-                ),
-              ),
-              const SizedBox(height: 16),
-              _buildMatrixRow(
-                context,
-                TranslateService.tr('True Positives (TP)'),
-                "45",
-                Icons.verified_user_rounded,
-              ),
-              const SizedBox(height: 12),
-              _buildMatrixRow(
-                context,
-                TranslateService.tr('True Negatives (TN)'),
-                "42",
-                Icons.gpp_good_rounded,
-              ),
-              const SizedBox(height: 12),
-              _buildMatrixRow(
-                context,
-                TranslateService.tr('False Positives (FP)'),
-                "2",
-                Icons.warning_amber_rounded,
-              ),
-              const SizedBox(height: 12),
-              _buildMatrixRow(
-                context,
-                TranslateService.tr('False Negatives (FN)'),
-                "1",
-                Icons.highlight_off_rounded,
-              ),
-              SizedBox(height: 32.h),
-              Text(
-                TranslateService.tr('Metric Scores'),
-                style: GoogleFonts.roboto(
-                  fontSize: 18.sp,
-                  fontWeight: FontWeight.bold,
-                  color: colorScheme.onSurface,
-                ),
-              ),
-              SizedBox(height: 16.h),
-              _buildProgressIndicator(
-                context,
-                TranslateService.tr('Precision'),
-                0.95,
-              ),
-              const SizedBox(height: 12),
-              _buildProgressIndicator(
-                context,
-                TranslateService.tr('Recall'),
-                0.97,
-              ),
-              const SizedBox(height: 12),
-              _buildProgressIndicator(
-                context,
-                TranslateService.tr('F1 Score'),
-                0.96,
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }
