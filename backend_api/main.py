@@ -86,11 +86,14 @@ async def recognize_face(file: UploadFile = File(...)):
     
     try:
         contents = await file.read()
-    nparr = np.frombuffer(contents, np.uint8)
-    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-    
-    if img is None:
-        raise HTTPException(status_code=400, detail="Invalid image file")
+        nparr = np.frombuffer(contents, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        
+        if img is None:
+            raise HTTPException(status_code=400, detail="Invalid image file")
+    except Exception as e:
+        print(f"ERROR reading image: {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid image file: {str(e)}")
     
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     faces = face_cascade.detectMultiScale(gray, 1.3, 5)
