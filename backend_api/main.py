@@ -141,7 +141,8 @@ async def register_face(username: str = Form(...), files: List[UploadFile] = Fil
     existing_images = len(os.listdir(user_dir)) if os.path.exists(user_dir) else 0
     saved_images = 0
     
-    for file in files:
+    print(f"DEBUG: Received {len(files)} files for registration/update.")
+    for i, file in enumerate(files):
         contents = await file.read()
         nparr = np.frombuffer(contents, np.uint8)
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
@@ -150,7 +151,11 @@ async def register_face(username: str = Form(...), files: List[UploadFile] = Fil
             continue
             
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        faces = face_cascade.detectMultiScale(gray, 1.3, 5)
+        # Use more sensitive parameters: scaleFactor=1.1, minNeighbors=3
+        faces = face_cascade.detectMultiScale(gray, 1.1, 3)
+        
+        if len(faces) == 0:
+            print(f"DEBUG: No face detected in file index {i}")
         
         for (x, y, w, h) in faces:
             # Crop dan save face region

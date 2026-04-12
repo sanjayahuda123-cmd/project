@@ -6,6 +6,7 @@ import 'package:transignition/service/translate_service.dart';
 import 'package:http/http.dart' as http;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:transignition/constants/api_config.dart';
+import 'package:screen_brightness/screen_brightness.dart';
 
 class FaceRegistrationPage extends StatefulWidget {
   const FaceRegistrationPage({super.key});
@@ -37,7 +38,24 @@ class _FaceRegistrationPageState extends State<FaceRegistrationPage>
       CurvedAnimation(parent: _scanController, curve: Curves.easeInOut),
     );
 
+    _maximizeBrightness();
     _initCameraAndRegister();
+  }
+
+  Future<void> _maximizeBrightness() async {
+    try {
+      await ScreenBrightness().setScreenBrightness(1.0);
+    } catch (e) {
+      debugPrint("Failed to set brightness: $e");
+    }
+  }
+
+  Future<void> _resetBrightness() async {
+    try {
+      await ScreenBrightness().resetScreenBrightness();
+    } catch (e) {
+      debugPrint("Failed to reset brightness: $e");
+    }
   }
 
   Future<void> _initCameraAndRegister() async {
@@ -140,6 +158,7 @@ class _FaceRegistrationPageState extends State<FaceRegistrationPage>
 
   @override
   void dispose() {
+    _resetBrightness();
     _scanController.dispose();
     _cameraController?.dispose();
     super.dispose();

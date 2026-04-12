@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:transignition/constants/api_config.dart';
+import 'package:screen_brightness/screen_brightness.dart';
 
 class FaceScanPage extends StatefulWidget {
   const FaceScanPage({super.key});
@@ -36,7 +37,24 @@ class _FaceScanPageState extends State<FaceScanPage>
       CurvedAnimation(parent: _scanController, curve: Curves.easeInOut),
     );
 
+    _maximizeBrightness();
     _initCameraAndScan();
+  }
+
+  Future<void> _maximizeBrightness() async {
+    try {
+      await ScreenBrightness().setScreenBrightness(1.0);
+    } catch (e) {
+      debugPrint("Failed to set brightness: $e");
+    }
+  }
+
+  Future<void> _resetBrightness() async {
+    try {
+      await ScreenBrightness().resetScreenBrightness();
+    } catch (e) {
+      debugPrint("Failed to reset brightness: $e");
+    }
   }
 
   Future<void> _initCameraAndScan() async {
@@ -62,13 +80,19 @@ class _FaceScanPageState extends State<FaceScanPage>
         _isCameraInitialized = true;
       });
 
-      // Allow camera to stabilize
-      await Future.delayed(const Duration(seconds: 1));
-      if (!mounted) return;
+      // Allow camera to stabilize and focus
+      await Future.delayed(const Duration(seconds: 2));
+      if (!mounted || _cameraController == null || !_cameraController!.value.isInitialized) {
+        debugPrint("Camera not ready or page unmounted.");
+        return;
+      }
 
+      debugPrint("Attempting to take picture...");
       final XFile image = await _cameraController!.takePicture();
+      debugPrint("Picture captured successfully: ${image.path}");
 
       // Send to FastAPI Backend
+      debugPrint("Connecting to API: ${ApiConfig.recognizeEndpoint}");
       final request = http.MultipartRequest(
         'POST',
         Uri.parse(ApiConfig.recognizeEndpoint),
@@ -85,12 +109,18 @@ class _FaceScanPageState extends State<FaceScanPage>
       final data = json.decode(response.body);
       final user = FirebaseAuth.instance.currentUser;
       final currentUserId = user?.uid ?? '';
+      
+      // DEBUG LOG untuk melihat hasil deteksi di console
+      debugPrint("API Response: $data");
+      debugPrint("Current User ID: $currentUserId");
 
       bool identityMatched = false;
       if (data['status'] == 'success' && data['results'] != null) {
         for (var result in data['results']) {
+          debugPrint("Detected Face: ${result['name']} | Confidence: ${result['confidence']}");
+
           // Fisherface confidence is distance (lower is closer/better)
-          // Threshold depends on training, but usually < 1000 or < 800 is good
+          // Threshold 1000 adalah standar, bisa disesuaikan berdasarkan hasil tes
           if (result['name'] == currentUserId &&
               result['confidence'] < 1000) {
             identityMatched = true;
@@ -132,6 +162,7 @@ class _FaceScanPageState extends State<FaceScanPage>
 
   @override
   void dispose() {
+    _resetBrightness();
     _scanController.dispose();
     _cameraController?.dispose();
     super.dispose();
