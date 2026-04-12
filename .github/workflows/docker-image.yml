@@ -21,6 +21,11 @@ jobs:
           port: 22
           script: |
             cd ./project/backend_api
+<<<<<<< HEAD
             git fetch origin main
             git reset --hard origin/main
             docker-compose up -d --build || docker compose up -d --build
+=======
+            git pull origin main
+            docker compose up -d --build
+>>>>>>> dc40f2d0ea0926e072a1f136a75ce66722a3fea3
