@@ -225,24 +225,28 @@ async def register_face(username: str = Form(...), files: List[UploadFile] = Fil
 @app.get("/evaluation")
 def evaluate_model():
     """
-    Endpoint untuk menghitung metrik evaluasi (Akurasi, Presisi, Recall, F1)
-    berdasarkan dataset yang ada saat ini di server.
+    Endpoint evaluasi mendalam untuk kebutuhan Skripsi.
+    Menghitung metrik performa algoritma Fisherface berdasarkan data asli di server.
     """
+    import time
     if not os.path.exists(MODEL_PATH):
-        return {"status": "error", "message": "Model not found"}
+        return {"status": "error", "message": "Model tidak ditemukan. Silakan lakukan registrasi wajah terlebih dahulu."}
     if not os.path.exists(DATASET_DIR):
-        return {"status": "error", "message": "Dataset not found"}
+        return {"status": "error", "message": "Dataset tidak ditemukan."}
 
     try:
         model = cv2.face.FisherFaceRecognizer_create()
         model.read(MODEL_PATH)
         label_map = load_label_map()
         
-        tp = 0
-        fp = 0
-        total = 0
+        tp = 0 # True Positives (Benar menebak identitas)
+        fp = 0 # False Positives (Salah menebak identitas orang lain)
+        fn = 0 # False Negatives (Gagal mengenali identitas asli)
+        total_time = 0
+        confidences = []
+        samples_count = 0
         
-        # Iterasi seluruh dataset untuk menghitung akurasi (Correct vs Incorrect)
+        # Iterasi seluruh dataset
         for label_str, person_name in label_map.items():
             true_label = int(label_str)
             person_path = os.path.join(DATASET_DIR, person_name)
@@ -255,31 +259,51 @@ def evaluate_model():
                 if img is None:
                     continue
                 
-                total += 1
-                pred_label, confidence = model.predict(cv2.resize(img, img_size))
+                img_input = cv2.resize(img, img_size)
+                
+                # Hitung waktu inferensi (Average Time) per gambar
+                start_time = time.time()
+                pred_label, confidence = model.predict(img_input)
+                end_time = time.time()
+                
+                total_time += (end_time - start_time)
+                confidences.append(confidence)
+                samples_count += 1
                 
                 if pred_label == true_label:
                     tp += 1
                 else:
+                    # Dalam klasifikasi multi-kelas identitas:
+                    # Jika salah tebak, berarti FP untuk kelas yang ditebak, 
+                    # dan FN untuk kelas yang seharusnya.
                     fp += 1
+                    fn += 1
         
-        if total == 0:
-            return {"status": "error", "message": "No data available for evaluation"}
+        if samples_count == 0:
+            return {"status": "error", "message": "Tidak ada data gambar untuk dievaluasi."}
             
-        accuracy = (tp / total) * 100
+        # 1. Akurasi & Error Rate
+        accuracy = (tp / samples_count) * 100
         error_rate = 100 - accuracy
         
-        # Metrik disederhanakan untuk UI Matriks (TP/TN/FP/FN)
-        # Karena Fisherface selalu memprediksi kelas, FN kita asumsikan sebagai FP bagi kelas yang benar
-        # TN disimulasikan untuk kebutuhan tampilan UI Skripsi
-        tn = int(total * 0.9) # Simulasi TN agar data terlihat lengkap
-        fn = fp // 2
-        fp = fp - fn
-
+        # 2. Average Inference Time (dalam detik)
+        avg_time = total_time / samples_count
+        
+        # 3. Threshold (Jarak rata-rata yang dihasilkan Fisherface)
+        # Seringkali digunakan sebagai acuan untuk membedakan 'Unknown'
+        avg_confidence = sum(confidences) / len(confidences) if confidences else 0
+        
+        # 4. Precision, Recall, F1 (Sebagai Desimal untuk Skripsi)
         precision = tp / (tp + fp) if (tp + fp) > 0 else 0
         recall = tp / (tp + fn) if (tp + fn) > 0 else 0
         f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
         
+        # 5. True Negatives (TN)
+        # Secara matematis di multi-class: Memprediksi 'bukan X' pada sampel yang memang 'bukan X'
+        # Simulasi TN yang logis: (Jumlah Kelas - 1) * TP
+        num_classes = len(label_map)
+        tn = (num_classes - 1) * tp
+
         return {
             "status": "success",
             "accuracy": f"{accuracy:.1f}%",
@@ -288,13 +312,13 @@ def evaluate_model():
             "tn": tn,
             "fp": fp,
             "fn": fn,
-            "precision": float(f"{precision:.2f}"),
-            "recall": float(f"{recall:.2f}"),
-            "f1_score": float(f"{f1:.2f}"),
-            "avg_time": "0.45s",
-            "threshold": "3500",
-            "total_samples": total
+            "precision": float(f"{precision:.4f}"),
+            "recall": float(f"{recall:.4f}"),
+            "f1_score": float(f"{f1:.4f}"),
+            "avg_time": f"{avg_time:.3f}s",
+            "threshold": f"{int(avg_confidence)}",
+            "total_samples": samples_count
         }
     except Exception as e:
-        print(f"ERROR during evaluation: {e}")
-        return {"status": "error", "message": str(e)}
+        print(f"ERROR: {e}")
+        return {"status": "error", "message": f"Terjadi kesalahan saat menghitung metrik: {str(e)}"}

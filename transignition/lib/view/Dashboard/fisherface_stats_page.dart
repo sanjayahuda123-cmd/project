@@ -251,8 +251,10 @@ class _FisherfaceStatsPageState extends State<FisherfaceStatsPage> {
           SizedBox(height: 12.h),
           Text(
             value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: GoogleFonts.roboto(
-              fontSize: 24.sp,
+              fontSize: 20.sp,
               fontWeight: FontWeight.bold,
               color: colorScheme.onSurface,
             ),
@@ -334,7 +336,7 @@ class _FisherfaceStatsPageState extends State<FisherfaceStatsPage> {
               ),
             ),
             Text(
-              "${(value * 100).toStringAsFixed(1)}%",
+              value.toStringAsFixed(4), // Display as decimal for Skripsi
               style: GoogleFonts.roboto(
                 fontSize: 14.sp,
                 fontWeight: FontWeight.bold,
