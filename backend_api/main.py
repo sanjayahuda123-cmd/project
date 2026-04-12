@@ -69,7 +69,7 @@ def get_status():
 @app.post("/recognize")
 async def recognize_face(file: UploadFile = File(...)):
     """
-    Endpoint untuk testing/prediksi wajah pengguna.
+    Endpoint untuk testing/prediksi wajah user.
     Menggunakan model FisherFace yang sudah dilatih (fisherface_model.yml).
     """
     if not os.path.exists(MODEL_PATH):
