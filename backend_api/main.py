@@ -242,6 +242,8 @@ def evaluate_model():
         tp = 0 # True Positives (Benar menebak identitas)
         fp = 0 # False Positives (Salah menebak identitas orang lain)
         fn = 0 # False Negatives (Gagal mengenali identitas asli)
+        y_true = []
+        y_pred = []
         total_time = 0
         confidences = []
         samples_count = 0
@@ -269,6 +271,10 @@ def evaluate_model():
                 total_time += (end_time - start_time)
                 confidences.append(confidence)
                 samples_count += 1
+                
+                # Masukkan data asli untuk confusion matrix
+                y_true.append(true_label)
+                y_pred.append(pred_label)
                 
                 if pred_label == true_label:
                     tp += 1
@@ -317,7 +323,9 @@ def evaluate_model():
             "f1_score": float(f"{f1:.4f}"),
             "avg_time": f"{avg_time:.3f}s",
             "threshold": f"{int(avg_confidence)}",
-            "total_samples": samples_count
+            "total_samples": samples_count,
+            "y_true_names": [label_map[str(y)] for y in y_true],
+            "y_pred_names": [label_map[str(y)] for y in y_pred]
         }
     except Exception as e:
         print(f"ERROR: {e}")
@@ -326,13 +334,15 @@ def evaluate_model():
 @app.get("/evaluation/plot")
 def get_evaluation_plot():
     """
-    Endpoint untuk menghasilkan grafik plot performa model.
-    Mengembalikan file gambar PNG.
+    Endpoint untuk menghasilkan grafik plot performa model lengkap (Bar Chart + Confusion Matrix).
     """
     import matplotlib
-    matplotlib.use('Agg') # Non-interactive backend
+    matplotlib.use('Agg')
     import matplotlib.pyplot as plt
+    import seaborn as sns
     import io
+    import pandas as pd
+    from sklearn.metrics import confusion_matrix
     from fastapi.responses import StreamingResponse
 
     # Ambil data evaluasi
@@ -340,34 +350,46 @@ def get_evaluation_plot():
     if eval_data.get("status") == "error":
         raise HTTPException(status_code=400, detail=eval_data.get("message"))
 
-    # Persiapkan data untuk plot
-    metrics = ['Precision', 'Recall', 'F1 Score']
-    values = [eval_data['precision'], eval_data['recall'], eval_data['f1_score']]
-    
-    # Gunakan Akurasi (hilangkan %)
-    acc_val = float(eval_data['accuracy'].replace('%', '')) / 100
-    metrics.insert(0, 'Accuracy')
-    values.insert(0, acc_val)
+    y_true = eval_data['y_true_names']
+    y_pred = eval_data['y_pred_names']
+    labels = sorted(list(set(y_true)))
 
-    # Buat Bar Chart
-    plt.figure(figsize=(10, 6))
-    colors = ['#4CAF50', '#2196F3', '#FF9800', '#F44336']
-    bars = plt.bar(metrics, values, color=colors, width=0.6)
+    # Buat Figure dengan 2 baris (Metrics & Confusion Matrix)
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 16))
+    plt.subplots_adjust(hspace=0.4)
+
+    # 1. Plot Metrics (Bar Chart)
+    metrics = ['Accuracy', 'Precision', 'Recall', 'F1 Score']
+    acc_val = float(eval_data['accuracy'].replace('%', '')) / 100
+    values = [acc_val, eval_data['precision'], eval_data['recall'], eval_data['f1_score']]
     
-    # Tambahkan Label Nilai di Atas Bar
+    colors = ['#4CAF50', '#2196F3', '#FF9800', '#F44336']
+    bars = ax1.bar(metrics, values, color=colors, width=0.5)
+    ax1.set_title('Fisherface Performance Metrics', fontsize=16, fontweight='bold', pad=15)
+    ax1.set_ylim(0, 1.1)
+    ax1.set_ylabel('Score')
+    ax1.grid(axis='y', linestyle='--', alpha=0.6)
+    
     for bar in bars:
         yval = bar.get_height()
-        plt.text(bar.get_x() + bar.get_width()/2, yval + 0.01, f"{yval:.4f}", ha='center', va='bottom', fontweight='bold')
+        ax1.text(bar.get_x() + bar.get_width()/2, yval + 0.01, f"{yval:.4f}", ha='center', va='bottom', fontweight='bold')
 
-    plt.title('Fisherface Algorithm Performance Metrics', fontsize=14, fontweight='bold', pad=20)
-    plt.ylabel('Score (0.0 - 1.0)', fontsize=12)
-    plt.ylim(0, 1.1)
-    plt.grid(axis='y', linestyle='--', alpha=0.7)
+    # 2. Confusion Matrix (Heatmap)
+    cm = confusion_matrix(y_true, y_pred, labels=labels)
+    df_cm = pd.DataFrame(cm, index=labels, columns=labels)
     
+    sns.heatmap(df_cm, annot=True, fmt='d', cmap='Blues', ax=ax2, cbar=False)
+    ax2.set_title('Confusion Matrix', fontsize=16, fontweight='bold', pad=15)
+    ax2.set_xlabel('Predicted Label', fontweight='bold')
+    ax2.set_ylabel('True Label', fontweight='bold')
+    
+    # Putar label X agar tidak tumpang tindih
+    plt.setp(ax2.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
+
     # Simpan ke Buffer
     buf = io.BytesIO()
     plt.savefig(buf, format='png', bbox_inches='tight', dpi=150)
-    plt.close() # Penting: bersihkan memori plt
+    plt.close()
     buf.seek(0)
     
     return StreamingResponse(buf, media_type="image/png", headers={"Content-Disposition": "attachment; filename=fisherface_evaluation_plot.png"})
