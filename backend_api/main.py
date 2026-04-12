@@ -74,12 +74,17 @@ async def recognize_face(file: UploadFile = File(...)):
     if not os.path.exists(MODEL_PATH):
         raise HTTPException(status_code=400, detail="Fisherface model not found. Please train first.")
     
-    label_map = load_label_map()
-    # Inisialisasi FisherFace Recognizer
-    model = cv2.face.FisherFaceRecognizer_create()
-    model.read(MODEL_PATH)
+    try:
+        label_map = load_label_map()
+        # Inisialisasi FisherFace Recognizer
+        model = cv2.face.FisherFaceRecognizer_create()
+        model.read(MODEL_PATH)
+    except Exception as e:
+        print(f"ERROR loading model: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to load model: {str(e)}")
     
-    contents = await file.read()
+    try:
+        contents = await file.read()
     nparr = np.frombuffer(contents, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
     
@@ -93,20 +98,24 @@ async def recognize_face(file: UploadFile = File(...)):
         return {"status": "failed", "message": "No face detected"}
     
     results = []
-    for (x, y, w, h) in faces:
-        face = gray[y:y+h, x:x+w]
-        face_resized = cv2.resize(face, img_size)
-        
-        # Prediksi wajah
-        label, confidence = model.predict(face_resized)
-        name = label_map.get(str(label), "Unknown")
-        
-        results.append({
-            "name": name,
-            "label": int(label),
-            "confidence": float(confidence),
-            "bbox": {"x": int(x), "y": int(y), "w": int(w), "h": int(h)}
-        })
+    try:
+        for (x, y, w, h) in faces:
+            face = gray[y:y+h, x:x+w]
+            face_resized = cv2.resize(face, img_size)
+            
+            # Prediksi wajah
+            label, confidence = model.predict(face_resized)
+            name = label_map.get(str(label), "Unknown")
+            
+            results.append({
+                "name": name,
+                "label": int(label),
+                "confidence": float(confidence),
+                "bbox": {"x": int(x), "y": int(y), "w": int(w), "h": int(h)}
+            })
+    except Exception as e:
+        print(f"ERROR during prediction: {e}")
+        raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
         
     return {"status": "success", "results": results}
 
