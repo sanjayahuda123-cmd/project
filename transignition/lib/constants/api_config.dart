@@ -4,4 +4,5 @@ class ApiConfig {
   static const String recognizeEndpoint = '$baseUrl/recognize';
   static const String statusEndpoint = '$baseUrl/status';
   static const String evaluationEndpoint = '$baseUrl/evaluation';
+  static const String plotEndpoint = '$baseUrl/evaluation/plot';
 }

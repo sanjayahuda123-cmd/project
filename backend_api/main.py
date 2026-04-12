@@ -322,3 +322,52 @@ def evaluate_model():
     except Exception as e:
         print(f"ERROR: {e}")
         return {"status": "error", "message": f"Terjadi kesalahan saat menghitung metrik: {str(e)}"}
+
+@app.get("/evaluation/plot")
+def get_evaluation_plot():
+    """
+    Endpoint untuk menghasilkan grafik plot performa model.
+    Mengembalikan file gambar PNG.
+    """
+    import matplotlib
+    matplotlib.use('Agg') # Non-interactive backend
+    import matplotlib.pyplot as plt
+    import io
+    from fastapi.responses import StreamingResponse
+
+    # Ambil data evaluasi
+    eval_data = evaluate_model()
+    if eval_data.get("status") == "error":
+        raise HTTPException(status_code=400, detail=eval_data.get("message"))
+
+    # Persiapkan data untuk plot
+    metrics = ['Precision', 'Recall', 'F1 Score']
+    values = [eval_data['precision'], eval_data['recall'], eval_data['f1_score']]
+    
+    # Gunakan Akurasi (hilangkan %)
+    acc_val = float(eval_data['accuracy'].replace('%', '')) / 100
+    metrics.insert(0, 'Accuracy')
+    values.insert(0, acc_val)
+
+    # Buat Bar Chart
+    plt.figure(figsize=(10, 6))
+    colors = ['#4CAF50', '#2196F3', '#FF9800', '#F44336']
+    bars = plt.bar(metrics, values, color=colors, width=0.6)
+    
+    # Tambahkan Label Nilai di Atas Bar
+    for bar in bars:
+        yval = bar.get_height()
+        plt.text(bar.get_x() + bar.get_width()/2, yval + 0.01, f"{yval:.4f}", ha='center', va='bottom', fontweight='bold')
+
+    plt.title('Fisherface Algorithm Performance Metrics', fontsize=14, fontweight='bold', pad=20)
+    plt.ylabel('Score (0.0 - 1.0)', fontsize=12)
+    plt.ylim(0, 1.1)
+    plt.grid(axis='y', linestyle='--', alpha=0.7)
+    
+    # Simpan ke Buffer
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png', bbox_inches='tight', dpi=150)
+    plt.close() # Penting: bersihkan memori plt
+    buf.seek(0)
+    
+    return StreamingResponse(buf, media_type="image/png", headers={"Content-Disposition": "attachment; filename=fisherface_evaluation_plot.png"})

@@ -5,6 +5,7 @@ import 'package:transignition/service/translate_service.dart';
 import 'package:transignition/constants/api_config.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:url_launcher/url_launcher.dart';
 
 class FisherfaceStatsPage extends StatefulWidget {
   const FisherfaceStatsPage({super.key});
@@ -222,6 +223,26 @@ class _FisherfaceStatsPageState extends State<FisherfaceStatsPage> {
                           TranslateService.tr('F1 Score'),
                           (_data?['f1_score'] ?? 0).toDouble(),
                         ),
+                        SizedBox(height: 40.h),
+                        FilledButton.icon(
+                          onPressed: () async {
+                            final Uri url = Uri.parse(ApiConfig.plotEndpoint);
+                            if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Could not launch download URL')),
+                                );
+                              }
+                            }
+                          },
+                          icon: const Icon(Icons.download_rounded),
+                          label: Text(TranslateService.tr('Download Performance Plot')),
+                          style: FilledButton.styleFrom(
+                            padding: EdgeInsets.symmetric(vertical: 16.h),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16.r)),
+                          ),
+                        ),
+                        SizedBox(height: 24.h),
                       ],
                     ),
                   ),
