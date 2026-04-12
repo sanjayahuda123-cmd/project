@@ -189,8 +189,17 @@ async def register_face(username: str = Form(...), files: List[UploadFile] = Fil
             
         label_map[str(current_label)] = person_name
         
-        # Load images for each person
-        for img_name in os.listdir(person_path):
+        # Load images for each person (hanya gunakan 80% data awal untuk training produksi)
+        all_imgs = [f for f in os.listdir(person_path) if f.endswith(('.jpg', '.png'))]
+        all_imgs.sort() # URUTKAN agar pembagian 80/20 konsisten antara /register dan /evaluation
+        
+        train_count = int(0.8 * len(all_imgs))
+        if train_count == 0 and len(all_imgs) > 0: 
+            train_count = 1
+            
+        selected_imgs = all_imgs[:train_count] # 80% Awal untuk Training
+        
+        for img_name in selected_imgs:
             img_path = os.path.join(person_path, img_name)
             img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
             if img is not None:
@@ -225,59 +234,48 @@ async def register_face(username: str = Form(...), files: List[UploadFile] = Fil
 @app.get("/evaluation")
 def evaluate_model():
     """
-    Endpoint evaluasi ilmiah untuk Skripsi.
-    Menggunakan metode Train-Test Split (80% Data Latih, 20% Data Uji).
+    Endpoint evaluasi untuk Skripsi.
+    Menggunakan model asli (produksi) untuk menguji 20% data yang TIDAK digunakan saat training.
     """
     import time
-    import random
+    if not os.path.exists(MODEL_PATH):
+        return {"status": "error", "message": "Model produksi belum dibuat. Silakan registrasi data wajah terlebih dahulu."}
     if not os.path.exists(DATASET_DIR):
         return {"status": "error", "message": "Dataset tidak ditemukan."}
 
     try:
+        # 1. Load Model Asli (Produksi)
+        model = cv2.face.FisherFaceRecognizer_create()
+        model.read(MODEL_PATH)
         label_map = load_label_map()
-        if len(label_map) < 2:
-            return {"status": "error", "message": "Minimal dibutuhkan 2 pengguna terdaftar untuk melakukan evaluasi Fisherface."}
         
-        train_faces = []
-        train_labels = []
         test_data = [] # List of (image, true_label)
+        total_training_samples = 0
         
-        # 1. Split Dataset 80/20
+        # 2. Ambil 20% data AKHIR dari setiap folder (Data yang tidak dipelajari model)
         for label_str, person_name in label_map.items():
             true_label = int(label_str)
             person_path = os.path.join(DATASET_DIR, person_name)
             if not os.path.isdir(person_path): continue
             
             images = [os.path.join(person_path, f) for f in os.listdir(person_path) if f.endswith(('.jpg', '.png'))]
-            if len(images) < 2: continue # Butuh minimal 2 gambar per orang untuk split
+            images.sort() # URUTKAN
             
-            random.shuffle(images)
             split_idx = int(0.8 * len(images))
-            if split_idx == 0: split_idx = 1 # Minimal 1 gambar training
+            if split_idx == 0: split_idx = 1
             
-            train_paths = images[:split_idx]
-            test_paths = images[split_idx:]
+            total_training_samples += split_idx
+            test_paths = images[split_idx:] # Ambil 20% sisanya untuk Tes
             
-            # Load Training Data
-            for p in train_paths:
-                img = cv2.imread(p, cv2.IMREAD_GRAYSCALE)
-                if img is not None:
-                    train_faces.append(cv2.resize(img, img_size))
-                    train_labels.append(true_label)
-            
-            # Load Testing Data
             for p in test_paths:
                 img = cv2.imread(p, cv2.IMREAD_GRAYSCALE)
                 if img is not None:
                     test_data.append((cv2.resize(img, img_size), true_label))
         
-        if not train_faces or not test_data:
-            return {"status": "error", "message": "Data tidak cukup untuk melakukan split 80/20."}
+        if not test_data:
+            return {"status": "error", "message": "Data tidak cukup untuk pengujian 20% (Butuh minimal 2 gambar per orang)."}
 
-        # 2. Training Model Sementara (Shadow Model) untuk Evaluasi
-        eval_model = cv2.face.FisherFaceRecognizer_create()
-        eval_model.train(train_faces, np.array(train_labels))
-        
+        # 3. Pengujian menggunakan Model Produksi pada Data Tes
         tp = 0
         fp = 0
         fn = 0
@@ -286,10 +284,9 @@ def evaluate_model():
         y_true = []
         y_pred = []
         
-        # 3. Testing pada 20% Data Uji
         for img, true_label in test_data:
             start_time = time.perf_counter()
-            pred_label, confidence = eval_model.predict(img)
+            pred_label, confidence = model.predict(img)
             end_time = time.perf_counter()
             
             total_time += (end_time - start_time)
@@ -311,7 +308,6 @@ def evaluate_model():
         avg_time = total_time / samples_count
         avg_confidence = sum(confidences) / len(confidences) if confidences else 0
         
-        # Precision, Recall, F1
         precision = tp / (tp + fp) if (tp + fp) > 0 else 0
         recall = tp / (tp + fn) if (tp + fn) > 0 else 0
         f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
@@ -322,7 +318,7 @@ def evaluate_model():
 
         return {
             "status": "success",
-            "method": "Train-Test Split (80/20)",
+            "method": "Hold-out Testing (Last 20% unseen data)",
             "accuracy": f"{accuracy:.1f}%",
             "error_rate": f"{error_rate:.1f}%",
             "tp": tp,
@@ -335,13 +331,13 @@ def evaluate_model():
             "avg_time": f"{avg_time:.4f}s",
             "threshold": f"{int(avg_confidence)}",
             "total_samples_test": samples_count,
-            "total_samples_train": len(train_faces),
+            "total_samples_train": total_training_samples,
             "y_true_names": [label_map.get(str(y), "Unknown") for y in y_true],
             "y_pred_names": [label_map.get(str(y), "Unknown") for y in y_pred]
         }
     except Exception as e:
         print(f"ERROR: {e}")
-        return {"status": "error", "message": f"Gagal menghitung metrik 80/20: {str(e)}"}
+        return {"status": "error", "message": f"Gagal evaluasi 20%: {str(e)}"}
 
 @app.get("/evaluation/plot")
 def get_evaluation_plot():
