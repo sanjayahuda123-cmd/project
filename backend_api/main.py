@@ -31,7 +31,8 @@ if face_cascade.empty():
     # Common path in some linux distros
     face_cascade = cv2.CascadeClassifier("/usr/share/opencv4/haarcascades/haarcascade_frontalface_default.xml")
 
-img_size = (200, 200)
+# Kita ubah kembali ke 160x160 agar cocok dengan model yang sudah ada di VPS
+img_size = (160, 160)
 
 def load_label_map():
     if os.path.exists(LABEL_MAP_PATH):
