@@ -2,9 +2,10 @@ import cv2
 import json
 import os
 import numpy as np
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+import time
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from typing import List
+from typing import List, Optional
 
 app = FastAPI(title="Transignition Backend - Fisherface")
 
@@ -35,7 +36,9 @@ def get_default_device_state():
     return {
         "ignition_on": False,
         "is_locked": True,
-        "last_updated": "never"
+        "last_updated": "never",
+        "esp32_last_seen": 0,
+        "is_online": False
     }
 
 if face_cascade.empty():
@@ -417,7 +420,7 @@ def get_evaluation_plot():
 # --- IoT / ESP32 Endpoints ---
 
 @app.get("/ignition/status")
-def get_ignition_status(device_id: str):
+def get_ignition_status(device_id: str, sender: Optional[str] = Query(None)):
     """
     Endpoint yang dipanggil oleh ESP32 untuk mendengarkan status relay.
     Query Param: ?device_id=XXXX
@@ -425,7 +428,17 @@ def get_ignition_status(device_id: str):
     if device_id not in devices:
         devices[device_id] = get_default_device_state()
     
-    return devices[device_id]
+    state = devices[device_id]
+    
+    if sender != 'app':
+        state["esp32_last_seen"] = time.time()
+        
+    if time.time() - state.get("esp32_last_seen", 0) <= 10:
+        state["is_online"] = True
+    else:
+        state["is_online"] = False
+        
+    return state
 
 @app.post("/ignition/control")
 async def control_ignition(device_id: str = Form(...), status: str = Form(...), locked: str = Form(None)):
