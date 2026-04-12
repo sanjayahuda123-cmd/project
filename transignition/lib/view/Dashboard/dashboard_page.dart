@@ -6,6 +6,9 @@ import 'package:transignition/view/Dashboard/setting_account_page.dart';
 import 'package:transignition/view/Dashboard/face_scan_page.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:transignition/service/translate_service.dart';
+import 'package:transignition/constants/api_config.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -19,6 +22,7 @@ class _DashboardPageState extends State<DashboardPage>
   bool _isEngineOn = false;
   bool _isLocked = true;
   bool _isEspConnected = false;
+  String? _currentDeviceId; // Nomor SIM atau ID ESP32 yang sedang dikontrol
   final TextEditingController _simController = TextEditingController();
 
   // Animation controller for the power button glowing/breathing effect
@@ -36,6 +40,45 @@ class _DashboardPageState extends State<DashboardPage>
     _breathingAnimation = Tween<double>(begin: 1.0, end: 1.05).animate(
       CurvedAnimation(parent: _breathingController, curve: Curves.easeInOut),
     );
+    
+    _syncStatusFromApi();
+  }
+
+  Future<void> _syncStatusFromApi() async {
+    if (_currentDeviceId == null) return;
+    
+    try {
+      final response = await http.get(
+        Uri.parse("${ApiConfig.statusDeviceEndpoint}?device_id=$_currentDeviceId"),
+      );
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        setState(() {
+          _isEngineOn = data['ignition_on'] ?? false;
+          _isLocked = data['is_locked'] ?? true;
+          _isEspConnected = true; 
+        });
+      }
+    } catch (e) {
+      debugPrint("Failed to sync with backend: $e");
+    }
+  }
+
+  Future<void> _updateDeviceState(bool engineOn, bool locked) async {
+    if (_currentDeviceId == null) return;
+
+    try {
+      await http.post(
+        Uri.parse(ApiConfig.controlEndpoint),
+        body: {
+          'device_id': _currentDeviceId,
+          'status': engineOn ? 'on' : 'off',
+          'locked': locked.toString(),
+        },
+      );
+    } catch (e) {
+      debugPrint("Failed to update device state: $e");
+    }
   }
 
   @override
@@ -45,7 +88,7 @@ class _DashboardPageState extends State<DashboardPage>
     super.dispose();
   }
 
-  void _toggleEngine() {
+  void _toggleEngine() async {
     if (_isLocked && !_isEngineOn) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -58,9 +101,13 @@ class _DashboardPageState extends State<DashboardPage>
       );
       return;
     }
+    
+    final targetState = !_isEngineOn;
     setState(() {
-      _isEngineOn = !_isEngineOn;
+      _isEngineOn = targetState;
     });
+    
+    await _updateDeviceState(_isEngineOn, _isLocked);
   }
 
   void _toggleLock() async {
@@ -91,6 +138,8 @@ class _DashboardPageState extends State<DashboardPage>
           _isEngineOn = true; // explicitly "maka engine on"
         });
 
+        await _updateDeviceState(true, false);
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
@@ -107,6 +156,9 @@ class _DashboardPageState extends State<DashboardPage>
       setState(() {
         _isLocked = true;
       });
+      
+      await _updateDeviceState(_isEngineOn, true);
+      
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -215,15 +267,26 @@ class _DashboardPageState extends State<DashboardPage>
                 child: FilledButton(
                   onPressed: () {
                     // Simulate connection logic
+                    final inputId = _simController.text.trim();
+                    if (inputId.isEmpty) {
+                      Navigator.pop(ctx);
+                      return;
+                    }
+
                     Navigator.pop(ctx);
                     setState(() {
+                      _currentDeviceId = inputId;
                       _isEspConnected = true;
                     });
+                    
+                    // Sync status HP dengan status yang ada di database Cloud untuk ID tersebut
+                    _syncStatusFromApi();
+
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
                         content: Text(
                           TranslateService.tr(
-                            'Connected to TransIgnition GSM module',
+                            'Connected to TransIgnition module: $inputId',
                           ),
                           style: GoogleFonts.roboto(),
                         ),

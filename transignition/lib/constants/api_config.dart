@@ -5,4 +5,8 @@ class ApiConfig {
   static const String statusEndpoint = '$baseUrl/status';
   static const String evaluationEndpoint = '$baseUrl/evaluation';
   static const String plotEndpoint = '$baseUrl/evaluation/plot';
+  
+  // IoT Endpoints
+  static const String controlEndpoint = '$baseUrl/ignition/control';
+  static const String statusDeviceEndpoint = '$baseUrl/ignition/status';
 }

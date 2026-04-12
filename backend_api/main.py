@@ -26,6 +26,18 @@ DATASET_DIR = os.path.join(MODEL_DIR, "dataset")
 cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
 face_cascade = cv2.CascadeClassifier(cascade_path)
 
+# Database Sederhana (In-Memory) untuk status perangkat
+# Key: device_id (Nomor SIM atau ID ESP32)
+# Value: status relay & kunci
+devices = {}
+
+def get_default_device_state():
+    return {
+        "ignition_on": False,
+        "is_locked": True,
+        "last_updated": "never"
+    }
+
 if face_cascade.empty():
     print(f"WARNING: Could not load face cascade from {cascade_path}. Trying fallback path...")
     # Common path in some linux distros
@@ -401,3 +413,43 @@ def get_evaluation_plot():
     buf.seek(0)
     
     return StreamingResponse(buf, media_type="image/png", headers={"Content-Disposition": "attachment; filename=fisherface_evaluation_plot.png"})
+
+# --- IoT / ESP32 Endpoints ---
+
+@app.get("/ignition/status")
+def get_ignition_status(device_id: str):
+    """
+    Endpoint yang dipanggil oleh ESP32 untuk mendengarkan status relay.
+    Query Param: ?device_id=XXXX
+    """
+    if device_id not in devices:
+        devices[device_id] = get_default_device_state()
+    
+    return devices[device_id]
+
+@app.post("/ignition/control")
+async def control_ignition(device_id: str = Form(...), status: str = Form(...), locked: str = Form(None)):
+    """
+    Endpoint yang dipanggil oleh Flutter App untuk mengubah status mesin/kunci pada device tertentu.
+    """
+    import datetime
+    
+    if device_id not in devices:
+        devices[device_id] = get_default_device_state()
+        
+    state = devices[device_id]
+    
+    if status.lower() == "on":
+        state["ignition_on"] = True
+    elif status.lower() == "off":
+        state["ignition_on"] = False
+        
+    if locked is not None:
+        if locked.lower() == "true":
+            state["is_locked"] = True
+        elif locked.lower() == "false":
+            state["is_locked"] = False
+            
+    state["last_updated"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    return {"status": "success", "device_id": device_id, "device_state": state}
