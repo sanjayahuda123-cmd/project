@@ -23,7 +23,14 @@ LABEL_MAP_PATH = os.path.join(MODEL_DIR, "label_map.json")
 DATASET_DIR = os.path.join(MODEL_DIR, "dataset")
 
 # Use Haar Cascade for Face Detection
-face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+face_cascade = cv2.CascadeClassifier(cascade_path)
+
+if face_cascade.empty():
+    print(f"WARNING: Could not load face cascade from {cascade_path}. Trying fallback path...")
+    # Common path in some linux distros
+    face_cascade = cv2.CascadeClassifier("/usr/share/opencv4/haarcascades/haarcascade_frontalface_default.xml")
+
 img_size = (200, 200)
 
 def load_label_map():
@@ -141,8 +148,12 @@ async def register_face(username: str = Form(...), files: List[UploadFile] = Fil
             face = gray[y:y+h, x:x+w]
             face_resized = cv2.resize(face, img_size)
             filename = os.path.join(user_dir, f"{existing_images + saved_images}.jpg")
-            cv2.imwrite(filename, face_resized)
-            saved_images += 1
+            
+            success = cv2.imwrite(filename, face_resized)
+            if success:
+                saved_images += 1
+            else:
+                print(f"CRITICAL: Failed to write image to {filename}. Check permissions.")
             
     if saved_images == 0:
         raise HTTPException(status_code=400, detail="No faces detected in the uploaded images")
