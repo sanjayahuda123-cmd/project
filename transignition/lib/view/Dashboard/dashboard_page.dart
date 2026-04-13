@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -8,6 +9,8 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:transignition/service/translate_service.dart';
 import 'package:transignition/constants/api_config.dart';
 import 'package:http/http.dart' as http;
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'dart:convert';
 
 class DashboardPage extends StatefulWidget {
@@ -28,6 +31,10 @@ class _DashboardPageState extends State<DashboardPage>
   // Animation controller for the power button glowing/breathing effect
   late AnimationController _breathingController;
   late Animation<double> _breathingAnimation;
+  
+  Timer? _statusTimer;
+  StreamSubscription<List<ScanResult>>? _scanSubscription;
+  bool _hasPromptedBle = false;
 
   @override
   void initState() {
@@ -42,6 +49,155 @@ class _DashboardPageState extends State<DashboardPage>
     );
     
     _syncStatusFromApi();
+    _statusTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+      _syncStatusFromApi();
+    });
+
+    _startTwsAutoDiscovery();
+  }
+
+  Future<void> _startTwsAutoDiscovery() async {
+    // Request permissions for BLE
+    Map<Permission, PermissionStatus> statuses = await [
+      Permission.bluetoothScan,
+      Permission.bluetoothConnect,
+      Permission.location,
+    ].request();
+
+    if (statuses[Permission.bluetoothScan]?.isGranted ?? true) {
+      // Start scanning for our specific Service UUID
+      try {
+        await FlutterBluePlus.startScan(
+          withServices: [Guid("7A0247E7-8E88-409B-A959-AB5092DDB03E")],
+          timeout: const Duration(seconds: 15),
+        );
+      } catch (e) {
+        debugPrint("Failed to start BLE scan: $e");
+        return; // BT might be off or unsupported
+      }
+
+
+      _scanSubscription = FlutterBluePlus.scanResults.listen((results) {
+        if (results.isNotEmpty && !_hasPromptedBle && _currentDeviceId == null) {
+          final result = results.first;
+          final String deviceIdCCID = result.device.platformName.isNotEmpty 
+              ? result.device.platformName 
+              : result.device.advName;
+          
+          if (deviceIdCCID.isNotEmpty) {
+            _hasPromptedBle = true;
+            FlutterBluePlus.stopScan();
+            _showTwsConnectPrompt(deviceIdCCID);
+          }
+        }
+      });
+    }
+  }
+
+  void _showTwsConnectPrompt(String detectedDeviceId) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      isDismissible: false,
+      builder: (ctx) {
+        final colorScheme = Theme.of(context).colorScheme;
+        return Container(
+          padding: EdgeInsets.only(
+            top: 24.h,
+            left: 24.w,
+            right: 24.w,
+            bottom: 24.h,
+          ),
+          decoration: BoxDecoration(
+            color: colorScheme.surface,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(28.r)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Mockup of TWS Connect Animation / Icon
+              Container(
+                width: 80.r,
+                height: 80.r,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: colorScheme.primaryContainer,
+                  boxShadow: [
+                    BoxShadow(
+                      color: colorScheme.primary.withOpacity(0.3),
+                      blurRadius: 20.r,
+                      spreadRadius: 5.r,
+                    )
+                  ]
+                ),
+                child: Icon(Icons.two_wheeler_rounded, size: 40.r, color: colorScheme.primary),
+              ),
+              SizedBox(height: 24.h),
+              Text(
+                TranslateService.tr('Nearby Motorcycle Detected'),
+                style: GoogleFonts.roboto(
+                  fontSize: 22.sp,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              SizedBox(height: 8.h),
+              Text(
+                TranslateService.tr(
+                  "Found TransIgnition module with ID:\n$detectedDeviceId\n\nWould you like to connect automatically?",
+                ),
+                textAlign: TextAlign.center,
+                style: GoogleFonts.roboto(color: colorScheme.onSurfaceVariant),
+              ),
+              SizedBox(height: 32.h),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        _hasPromptedBle = false; // Allow discovering again if declined
+                      },
+                      style: OutlinedButton.styleFrom(
+                        padding: EdgeInsets.symmetric(vertical: 16.h),
+                      ),
+                      child: Text(TranslateService.tr('Ignore')),
+                    ),
+                  ),
+                  SizedBox(width: 16.w),
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        _simController.text = detectedDeviceId;
+                        setState(() {
+                          _currentDeviceId = detectedDeviceId;
+                          _isEspConnected = true;
+                        });
+                        _syncStatusFromApi();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              TranslateService.tr('Connected seamlessly to: $detectedDeviceId'),
+                              style: GoogleFonts.roboto(),
+                            ),
+                            behavior: SnackBarBehavior.floating,
+                          ),
+                        );
+                      },
+                      style: FilledButton.styleFrom(
+                        padding: EdgeInsets.symmetric(vertical: 16.h),
+                      ),
+                      child: Text(TranslateService.tr('Connect')),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _syncStatusFromApi() async {
@@ -49,15 +205,17 @@ class _DashboardPageState extends State<DashboardPage>
     
     try {
       final response = await http.get(
-        Uri.parse("${ApiConfig.statusDeviceEndpoint}?device_id=$_currentDeviceId"),
+        Uri.parse("${ApiConfig.statusDeviceEndpoint}?device_id=$_currentDeviceId&sender=app"),
       );
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        setState(() {
-          _isEngineOn = data['ignition_on'] ?? false;
-          _isLocked = data['is_locked'] ?? true;
-          _isEspConnected = true; 
-        });
+        if (mounted) {
+          setState(() {
+            _isEngineOn = data['ignition_on'] ?? false;
+            _isLocked = data['is_locked'] ?? true;
+            _isEspConnected = data['is_online'] ?? false; 
+          });
+        }
       }
     } catch (e) {
       debugPrint("Failed to sync with backend: $e");
@@ -83,6 +241,8 @@ class _DashboardPageState extends State<DashboardPage>
 
   @override
   void dispose() {
+    _scanSubscription?.cancel();
+    _statusTimer?.cancel();
     _breathingController.dispose();
     _simController.dispose();
     super.dispose();

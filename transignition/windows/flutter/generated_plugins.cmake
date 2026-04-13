@@ -7,6 +7,8 @@ list(APPEND FLUTTER_PLUGIN_LIST
   firebase_auth
   firebase_core
   firebase_storage
+  flutter_blue_plus_winrt
+  permission_handler_windows
   screen_brightness_windows
   url_launcher_windows
 )
