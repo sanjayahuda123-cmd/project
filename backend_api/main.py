@@ -6,6 +6,56 @@ import time
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Optional
+import paho.mqtt.client as mqtt
+
+MQTT_BROKER = os.getenv("MQTT_BROKER", "127.0.0.1") # akan ter-overwrite oleh container mosquitto jika di docker
+MQTT_PORT = 1883
+MQTT_TOPIC_STATUS = "transignition/device/+/status"
+MQTT_TOPIC_CONTROL_PREFIX = "transignition/device/"
+
+try:
+    client_mqtt = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+except AttributeError:
+    # Fallback if using older paho-mqtt version
+    client_mqtt = mqtt.Client()
+
+def on_connect(client, userdata, flags, rc, properties=None):
+    print(f"Connected to MQTT Broker!")
+    client.subscribe(MQTT_TOPIC_STATUS)
+
+def on_message(client, userdata, msg):
+    try:
+        topic_parts = msg.topic.split('/')
+        if len(topic_parts) >= 4 and topic_parts[3] == "status":
+            device_id = topic_parts[2]
+            payload = json.loads(msg.payload.decode())
+            if device_id not in devices:
+                devices[device_id] = {
+                    "ignition_on": False,
+                    "is_locked": True,
+                    "last_updated": "never",
+                    "esp32_last_seen": 0,
+                    "is_online": False
+                }
+            state = devices[device_id]
+            state["esp32_last_seen"] = time.time()
+            state["is_online"] = True
+            
+            if "ignition_on" in payload:
+                state["ignition_on"] = payload["ignition_on"]
+    except Exception as e:
+        print(f"MQTT Message error: {e}")
+
+client_mqtt.on_connect = on_connect
+client_mqtt.on_message = on_message
+
+def start_mqtt():
+    try:
+        client_mqtt.connect(MQTT_BROKER, MQTT_PORT, 60)
+        client_mqtt.loop_start()
+    except Exception as e:
+        print(f"Failed to connect to MQTT: {e}")
+
 
 app = FastAPI(title="Transignition Backend - Fisherface")
 
@@ -17,6 +67,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.on_event("startup")
+def startup_event():
+    start_mqtt()
+
+@app.on_event("shutdown")
+def shutdown_event():
+    client_mqtt.loop_stop()
+    client_mqtt.disconnect()
+
 
 MODEL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "model")
 MODEL_PATH = os.path.join(MODEL_DIR, "fisherface_model.yml")
@@ -464,5 +524,13 @@ async def control_ignition(device_id: str = Form(...), status: str = Form(...), 
             state["is_locked"] = False
             
     state["last_updated"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # PUBLISH UPDATE TO ESP32 VIA MQTT
+    topic = f"{MQTT_TOPIC_CONTROL_PREFIX}{device_id}/control"
+    payload = {
+        "ignition_on": state["ignition_on"],
+        "is_locked": state["is_locked"]
+    }
+    client_mqtt.publish(topic, json.dumps(payload))
     
     return {"status": "success", "device_id": device_id, "device_state": state}

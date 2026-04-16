@@ -23,6 +23,7 @@ mdurl==0.1.2
 matplotlib
 numpy==2.2.6
 opencv-contrib-python==4.13.0.92
+paho-mqtt==2.1.0
 pandas
 pydantic==2.12.5
 pydantic-extra-types==2.11.2

@@ -1,12 +1,13 @@
 /*
  * TransIgnition - ESP32 Firmware (SIM-A7670E / GSM LTE Version)
+ * MQTT Implementation
  */
 
 #define TINY_GSM_MODEM_SIM7600
 #define TINY_GSM_RX_BUFFER 1024
 
 #include <TinyGsmClient.h>
-#include <ArduinoHttpClient.h>
+#include <PubSubClient.h>
 #include <ArduinoJson.h>
 
 #include <BLEDevice.h>
@@ -27,12 +28,13 @@ const char apn[]      = "internet";
 const char gprsUser[] = "";
 const char gprsPass[] = "";
 
-// ------------------- API -------------------
-const char* serverName = "103.93.129.118";
-const int serverPort = 8000;
+// ------------------- MQTT -------------------
+const char* mqttServer = "103.93.129.118"; // IP VPS Pribadi
+const int mqttPort = 1883;
 
 String myDeviceId = "081234567890";
-String resourcePath = "/ignition/status?device_id=" + myDeviceId;
+String mqttTopicControl = "transignition/device/dummy/control";
+String mqttTopicStatus = "transignition/device/dummy/status";
 
 // ------------------- PIN -------------------
 const int relayPin = 26;
@@ -51,7 +53,7 @@ bool lastEngineStatus = false;
 
 TinyGsm modem(SerialAT);
 TinyGsmClient client(modem);
-HttpClient http(client, serverName, serverPort);
+PubSubClient mqtt(client);
 
 // ================= SETUP =================
 void setup() {
@@ -84,7 +86,12 @@ void loop() {
     lastLoopTime = now;
 
     checkConnectionTask();
-    checkIgnitionTask();
+    
+    if (mqtt.connected()) {
+      mqtt.loop();
+    }
+    
+    publishStatusTask();
     checkSerialCommand();
 
   }
@@ -113,7 +120,8 @@ void connectToNetwork() {
   String ccid = modem.getSimCCID();
   if (ccid.length() > 0) {
     myDeviceId = ccid;
-    resourcePath = "/ignition/status?device_id=" + myDeviceId;
+    mqttTopicControl = "transignition/device/" + myDeviceId + "/control";
+    mqttTopicStatus = "transignition/device/" + myDeviceId + "/status";
     Serial.print("Device ID Automatically set to SIM CCID: ");
     Serial.println(myDeviceId);
   } else {
@@ -156,8 +164,60 @@ void connectToNetwork() {
   Serial.print("Signal: ");
   Serial.println(modem.getSignalQuality());
 
-  http.setTimeout(10000);
+  mqtt.setServer(mqttServer, mqttPort);
+  mqtt.setCallback(mqttCallback);
+
+  connectToMqtt();
 }
+
+// ================= MQTT CONNECT =================
+void connectToMqtt() {
+  if (!modem.isGprsConnected()) return;
+  
+  Serial.println("Connecting to MQTT...");
+  // Gunakan myDeviceId sebagai Client ID MQTT
+  if (mqtt.connect(myDeviceId.c_str())) {
+    Serial.println("MQTT Connected");
+    
+    // Subscribe ke topic control
+    mqtt.subscribe(mqttTopicControl.c_str());
+    
+    // Publish status awal
+    publishStatus();
+  } else {
+    Serial.print("MQTT Failed, rc=");
+    Serial.println(mqtt.state());
+  }
+}
+
+// ================= MQTT CALLBACK =================
+void mqttCallback(char* topic, byte* payload, unsigned int length) {
+  Serial.print("Message arrived [");
+  Serial.print(topic);
+  Serial.print("] ");
+  
+  String msg = "";
+  for (unsigned int i = 0; i < length; i++) {
+    msg += (char)payload[i];
+  }
+  Serial.println(msg);
+  
+  // Parse JSON
+  StaticJsonDocument<256> doc;
+  DeserializationError error = deserializeJson(doc, msg);
+  
+  if (error) {
+    Serial.print("JSON Error: ");
+    Serial.println(error.c_str());
+    return;
+  }
+  
+  bool ignitionOn = doc["ignition_on"];
+  bool isLocked = doc["is_locked"];
+  
+  controlRelay(ignitionOn, isLocked);
+}
+
 
 // ================= CONNECTION TASK =================
 void checkConnectionTask() {
@@ -167,76 +227,48 @@ void checkConnectionTask() {
     digitalWrite(ledStatusPin, LOW);
 
     if (millis() - lastReconnectTime > reconnectInterval) {
-
       Serial.println("Reconnecting Network...");
-
       connectToNetwork();
-
       lastReconnectTime = millis();
     }
 
   } else {
 
     digitalWrite(ledStatusPin, HIGH);
+    
+    // Check MQTT connection
+    if (!mqtt.connected()) {
+      if (millis() - lastReconnectTime > reconnectInterval) {
+         connectToMqtt();
+         lastReconnectTime = millis();
+      }
+    }
 
   }
 }
 
-// ================= IGNITION TASK =================
-void checkIgnitionTask() {
+// ================= STATUS PUBLISH TASK =================
+void publishStatus() {
+  if (mqtt.connected()) {
+    StaticJsonDocument<256> doc;
+    doc["ignition_on"] = lastEngineStatus;
+    
+    String payload;
+    serializeJson(doc, payload);
+    mqtt.publish(mqttTopicStatus.c_str(), payload.c_str());
+  }
+}
 
+void publishStatusTask() {
+  // Periodically send ping/status to backend
   if (millis() - lastRequestTime < requestInterval) return;
-
   lastRequestTime = millis();
 
-  if (!modem.isGprsConnected()) return;
-
-  Serial.println("Fetching API...");
-
-  int err = http.get(resourcePath);
-
-  if (err != 0) {
-
-    Serial.print("HTTP Error: ");
-    Serial.println(err);
-    return;
+  if (mqtt.connected()) {
+    publishStatus();
   }
-
-  int statusCode = http.responseStatusCode();
-
-  Serial.print("HTTP Code: ");
-  Serial.println(statusCode);
-
-  if (statusCode != 200 && statusCode != 201) {
-
-    http.stop();
-    return;
-  }
-
-  String payload = http.responseBody();
-
-  Serial.println(payload);
-
-  StaticJsonDocument<256> doc;
-
-  DeserializationError error = deserializeJson(doc, payload);
-
-  if (error) {
-
-    Serial.print("JSON Error: ");
-    Serial.println(error.c_str());
-
-    http.stop();
-    return;
-  }
-
-  bool ignitionOn = doc["ignition_on"];
-  bool isLocked = doc["is_locked"];
-
-  controlRelay(ignitionOn, isLocked);
-
-  http.stop();
 }
+
 
 // ================= RELAY CONTROL =================
 void controlRelay(bool ignitionOn, bool isLocked) {
@@ -282,10 +314,16 @@ void checkSerialCommand() {
     myDeviceId = command.substring(6);
     myDeviceId.trim();
 
-    resourcePath = "/ignition/status?device_id=" + myDeviceId;
+    mqttTopicControl = "transignition/device/" + myDeviceId + "/control";
+    mqttTopicStatus = "transignition/device/" + myDeviceId + "/status";
 
     Serial.print("Device ID Updated: ");
     Serial.println(myDeviceId);
+    
+    if (mqtt.connected()) {
+      mqtt.unsubscribe(mqttTopicControl.c_str());
+      mqtt.disconnect();
+    }
   }
 
 }

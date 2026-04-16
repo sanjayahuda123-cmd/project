@@ -6,4 +6,17 @@ services:
       - "8000:8000"
     volumes:
       - ./model:/app/model
+    environment:
+      - MQTT_BROKER=mosquitto
+    restart: always
+    depends_on:
+      - mosquitto
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: transignition_mosquitto
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./mosquitto:/mosquitto/config
     restart: always
