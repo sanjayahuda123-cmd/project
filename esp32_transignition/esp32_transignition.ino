@@ -32,9 +32,9 @@ const char gprsPass[] = "";
 const char* mqttServer = "103.93.129.118"; // IP VPS Pribadi
 const int mqttPort = 1883;
 
-String myDeviceId = "081234567890";
-String mqttTopicControl = "transignition/device/dummy/control";
-String mqttTopicStatus = "transignition/device/dummy/status";
+String myDeviceId = "081285696832"; // Default jika SIM tidak terbaca
+String mqttTopicControl = "transignition/device/" + myDeviceId + "/control";
+String mqttTopicStatus = "transignition/device/" + myDeviceId + "/status";
 
 // ------------------- PIN -------------------
 const int relayPin = 26;
