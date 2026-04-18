@@ -40,149 +40,172 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final bgColor = theme.scaffoldBackgroundColor;
-    final accent = const Color(0xFF1DB954);
+    final colorScheme = theme.colorScheme;
 
     return Scaffold(
-      backgroundColor: bgColor,
-      body: Container(
-        width: double.infinity,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: isDark
-                ? const [Color(0xFF0F1111), Color(0xFF121212)]
-                : [Colors.white, Colors.grey.shade100],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-          ),
-        ),
-        child: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: EdgeInsets.symmetric(
-                horizontal: 20.w,
-                vertical: MediaQuery.of(context).viewInsets.bottom + 28.h,
-              ),
-              child: ConstrainedBox(
-                constraints: BoxConstraints(maxWidth: 420.w),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 88.r,
-                      height: 88.r,
-                      decoration: BoxDecoration(
-                        color: accent,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Center(
-                        child: Icon(
-                          Icons.lock_reset,
-                          color: Colors.black,
-                          size: 36.r,
-                        ),
-                      ),
-                    ),
-                    SizedBox(height: 18.h),
-                    Text(
-                      TranslateService.tr('Reset Password'),
-                      style: GoogleFonts.roboto(
-                        fontSize: 26.sp,
-                        fontWeight: FontWeight.bold,
-                        color: theme.textTheme.headlineSmall?.color,
-                      ),
-                    ),
-                    SizedBox(height: 8.h),
-                    Text(
-                      TranslateService.tr(
-                        'Enter your email to receive a password reset link',
-                      ),
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.roboto(
-                        color: theme.textTheme.bodyMedium?.color?.withOpacity(
-                          0.8,
-                        ),
-                      ),
-                    ),
-                    SizedBox(height: 20.h),
-                    Form(
-                      key: _formKey,
-                      child: Column(
-                        children: [
-                          TextFormField(
-                            controller: _emailCtrl,
-                            keyboardType: TextInputType.emailAddress,
-                            textInputAction: TextInputAction.done,
-                            style: GoogleFonts.roboto(),
-                            decoration: InputDecoration(
-                              labelText: TranslateService.tr('Email Address'),
-                              prefixIcon: Icon(Icons.email_outlined),
-                            ),
-                            validator: (v) {
-                              if (v == null || v.trim().isEmpty) {
-                                return '${TranslateService.tr('Please enter your ')}email';
-                              }
-                              if (!RegExp(
-                                r'^[^@]+@[^@]+\.[^@]+',
-                              ).hasMatch(v.trim())) {
-                                return 'Masukkan email yang valid';
-                              }
-                              return null;
-                            },
-                          ),
-                          SizedBox(height: 18.h),
-                          SizedBox(
-                            width: double.infinity,
-                            height: 50.h,
-                            child: ElevatedButton(
-                              onPressed: _sending ? null : _sendReset,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: accent,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8.r),
-                                ),
-                                elevation: 2,
-                              ),
-                              child: _sending
-                                  ? SizedBox(
-                                      width: 20.r,
-                                      height: 20.r,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2.w,
-                                      ),
-                                    )
-                                  : Text(
-                                      TranslateService.tr('Send Reset Link'),
-                                      style: GoogleFonts.roboto(
-                                        fontSize: 16.sp,
-                                        fontWeight: FontWeight.w600,
-                                        color: Colors.black,
-                                      ),
-                                    ),
-                            ),
-                          ),
-                          SizedBox(height: 12.h),
-                          TextButton(
-                            onPressed: () => Navigator.of(context).pop(),
-                            child: Text(
-                              TranslateService.tr('Cancel'),
-                              style: GoogleFonts.roboto(
-                                color: theme.textTheme.bodyMedium?.color
-                                    ?.withOpacity(0.7),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
+      backgroundColor: colorScheme.surface,
+      body: Stack(
+        children: [
+          // Background subtle gradient/blob for Material You feel
+          Positioned(
+            top: -100,
+            right: -100,
+            child: Container(
+              width: 300.r,
+              height: 300.r,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: colorScheme.primaryContainer.withOpacity(0.2),
               ),
             ),
           ),
-        ),
+          SafeArea(
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: 24.w),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(height: 20.h),
+                  IconButton.filledTonal(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.arrow_back),
+                    style: IconButton.styleFrom(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16.r),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Center(
+                      child: SingleChildScrollView(
+                        padding: EdgeInsets.only(
+                          bottom: MediaQuery.of(context).viewInsets.bottom + 20.h,
+                        ),
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(maxWidth: 400.w),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                padding: EdgeInsets.all(24.r),
+                                decoration: BoxDecoration(
+                                  color: colorScheme.secondaryContainer,
+                                  borderRadius: BorderRadius.circular(28.r),
+                                ),
+                                child: Icon(
+                                  Icons.lock_reset_rounded,
+                                  color: colorScheme.onSecondaryContainer,
+                                  size: 48.r,
+                                ),
+                              ),
+                              SizedBox(height: 32.h),
+                              Text(
+                                TranslateService.tr('Forgot Password?'),
+                                style: theme.textTheme.displaySmall?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: colorScheme.onSurface,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                              SizedBox(height: 12.h),
+                              Text(
+                                TranslateService.tr(
+                                  'No worries! Enter your email address and we will send you a reset link.',
+                                ),
+                                textAlign: TextAlign.center,
+                                style: theme.textTheme.bodyLarge?.copyWith(
+                                  color: colorScheme.onSurfaceVariant,
+                                  height: 1.5,
+                                ),
+                              ),
+                              SizedBox(height: 40.h),
+                              Form(
+                                key: _formKey,
+                                child: Column(
+                                  children: [
+                                    TextFormField(
+                                      controller: _emailCtrl,
+                                      keyboardType: TextInputType.emailAddress,
+                                      textInputAction: TextInputAction.done,
+                                      decoration: InputDecoration(
+                                        labelText: TranslateService.tr('Email Address'),
+                                        hintText: 'example@email.com',
+                                        prefixIcon: const Icon(Icons.email_outlined),
+                                        filled: true,
+                                        fillColor: colorScheme.surfaceVariant.withOpacity(0.3),
+                                        border: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(16.r),
+                                          borderSide: BorderSide.none,
+                                        ),
+                                        enabledBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(16.r),
+                                          borderSide: BorderSide.none,
+                                        ),
+                                        focusedBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(16.r),
+                                          borderSide: BorderSide(
+                                            color: colorScheme.primary,
+                                            width: 2,
+                                          ),
+                                        ),
+                                      ),
+                                      validator: (v) {
+                                        if (v == null || v.trim().isEmpty) {
+                                          return '${TranslateService.tr('Please enter your ')}email';
+                                        }
+                                        if (!RegExp(
+                                          r'^[^@]+@[^@]+\.[^@]+',
+                                        ).hasMatch(v.trim())) {
+                                          return TranslateService.tr('Please enter a valid email');
+                                        }
+                                        return null;
+                                      },
+                                    ),
+                                    SizedBox(height: 32.h),
+                                    SizedBox(
+                                      width: double.infinity,
+                                      height: 56.h,
+                                      child: FilledButton(
+                                        onPressed: _sending ? null : _sendReset,
+                                        style: FilledButton.styleFrom(
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(16.r),
+                                          ),
+                                        ),
+                                        child: _sending
+                                            ? SizedBox(
+                                                width: 24.r,
+                                                height: 24.r,
+                                                child: CircularProgressIndicator(
+                                                  strokeWidth: 3.w,
+                                                  color: colorScheme.onPrimary,
+                                                ),
+                                              )
+                                            : Text(
+                                                TranslateService.tr('Send Reset Link'),
+                                                style: GoogleFonts.roboto(
+                                                  fontSize: 16.sp,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
 }
+
